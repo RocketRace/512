@@ -1,0 +1,1379 @@
+<meta charset="utf-8"></meta>
+
+<script>
+
+    
+/**@type WebGL2RenderingContext */
+var gl;
+/**@type WebGLProgram */
+var program;
+
+var bottoms;
+var tops;
+
+function generateTexture(width, height, data, n) {
+    const texture = gl.createTexture();
+    gl.activeTexture(gl.TEXTURE0 + n);
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, width, height, 0, gl.RGB, gl.UNSIGNED_BYTE, data);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+}
+
+function initializeProgram(spritesheet, tilemap) {
+    var vsSource = `
+    attribute vec2 position;
+
+    void main() {
+        gl_Position = vec4(position, 0.0, 1.0);
+    }
+    `;
+
+    var fsSource = `
+    precision mediump float;
+
+    uniform sampler2D spritesheet;
+    uniform sampler2D tilemap;
+    uniform vec2 canvasSize;
+    uniform vec2 spritesheetSize;
+    uniform vec2 spriteSize;
+    uniform vec2 tilemapSize;
+
+    vec2 scaledCoords() {
+        return vec2(
+            gl_FragCoord.x / canvasSize.x, 
+            gl_FragCoord.y / canvasSize.y
+        );
+    }
+
+    vec2 microCoords() {
+        return mod(scaledCoords() * tilemapSize, vec2(1.0, 1.0)) * spriteSize / spritesheetSize;
+    }
+
+    vec4 tilemapValue() {
+        return texture2D(tilemap, scaledCoords());
+    }
+
+    vec2 spriteIndex(vec4 color) {
+        return vec2(color.r, color.g); // a=1.0
+    }
+
+    vec4 spriteValue() {
+        return texture2D(spritesheet, spriteIndex(tilemapValue()) + microCoords());
+    }
+
+    void main() {
+        gl_FragColor = spriteValue();
+    }
+    `;
+
+    let canvas = document.getElementById("glCanvas")
+    gl = canvas.getContext("webgl");
+    program = gl.createProgram();
+
+    gl.pixelStorei( gl.UNPACK_ALIGNMENT, 1 )
+    
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vs, vsSource);
+    gl.compileShader(vs);
+    gl.attachShader(program, vs);
+    
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fs, fsSource);
+    gl.compileShader(fs);
+    gl.attachShader(program, fs);
+    
+    gl.linkProgram(program);
+    
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+        -1, -1,
+        1, -1,
+        1,  1,
+        1,  1,
+        -1, 1,
+        -1, -1,
+    ]), gl.STATIC_DRAW);
+    
+    const positionLoc = gl.getAttribLocation(program, "position");
+    gl.enableVertexAttribArray(positionLoc);
+    gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+    gl.useProgram(program);
+
+    const uSpritesheet = gl.getUniformLocation(program, "spritesheet");
+    gl.uniform1i(uSpritesheet, 0);
+    
+    const uTilemap = gl.getUniformLocation(program, "tilemap");
+    gl.uniform1i(uTilemap, 1);
+    
+    const uCanvasSize = gl.getUniformLocation(program, "canvasSize");
+    gl.uniform2f(uCanvasSize, canvas.width, canvas.height);
+    
+    const uTilemapSize = gl.getUniformLocation(program, "tilemapSize");
+    gl.uniform2f(uTilemapSize, tilemap.width, tilemap.height);
+    
+    const uSpritesheetSize = gl.getUniformLocation(program, "spritesheetSize");
+    gl.uniform2f(uSpritesheetSize, spritesheet.width, spritesheet.height);
+
+    const uSpriteSize = gl.getUniformLocation(program, "spriteSize");
+    gl.uniform2f(uSpriteSize, spritesheet.spriteWidth, spritesheet.spriteHeight);
+    
+    generateTexture(spritesheet.width, spritesheet.height, spritesheet.data, 0);
+    generateTexture(tilemap.width, tilemap.height, tilemap.data, 1);
+    
+    draw();
+}
+
+function draw() {
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+}
+
+function updateTilemap(tilemap) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, tilemap.width, tilemap.height, 0, gl.RGB, gl.UNSIGNED_BYTE, tilemap.data);
+    const mapLoc = gl.getUniformLocation(program, "tilemapSize");
+    gl.uniform2f(mapLoc, tilemap.width, tilemap.height);
+}
+
+function updateSpritesheet(spritesheet) {
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, spritesheet.width, spritesheet.height, 0, gl.RGB, gl.UNSIGNED_BYTE, spritesheet.data);
+}
+
+function updateProgram(spritesheet, tilemap) {
+    updateTilemap(tilemap);
+    updateSpritesheet(spritesheet);
+    draw();
+}
+
+function tick(tilemap) {
+    updateTilemap(tilemap);
+    draw();
+}
+
+function getPixels(bitmap, spriteWidth, spriteHeight) {
+    return new Uint8Array([45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 225, 30, 30, 225, 30, 30, 225, 30, 30, 225, 30, 30, 244, 137, 18, 244, 137, 18, 244, 137, 18, 244, 137, 18, 246, 230, 27, 246, 230, 27, 246, 230, 27, 246, 230, 27, 45, 45, 45, 67, 67, 67, 67, 67, 67, 45, 45, 45, 225, 30, 30, 232, 82, 82, 232, 82, 82, 225, 30, 30, 244, 137, 18, 242, 168, 85, 242, 168, 85, 244, 137, 18, 246, 230, 27, 255, 244, 103, 255, 244, 103, 246, 230, 27, 45, 45, 45, 67, 67, 67, 67, 67, 67, 45, 45, 45, 225, 30, 30, 232, 82, 82, 232, 82, 82, 225, 30, 30, 244, 137, 18, 242, 168, 85, 242, 168, 85, 244, 137, 18, 246, 230, 27, 255, 244, 103, 255, 244, 103, 246, 230, 27, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 45, 225, 30, 30, 225, 30, 30, 225, 30, 30, 225, 30, 30, 244, 137, 18, 244, 137, 18, 244, 137, 18, 244, 137, 18, 246, 230, 27, 246, 230, 27, 246, 230, 27, 246, 230, 27, 87, 201, 32, 87, 201, 32, 87, 201, 32, 87, 201, 32, 12, 214, 232, 12, 214, 232, 12, 214, 232, 12, 214, 232, 12, 43, 206, 12, 43, 206, 12, 43, 206, 12, 43, 206, 184, 18, 223, 184, 18, 223, 184, 18, 223, 184, 18, 223, 87, 201, 32, 128, 236, 76, 128, 236, 76, 87, 201, 32, 12, 214, 232, 78, 228, 242, 78, 228, 242, 12, 214, 232, 12, 43, 206, 47, 73, 212, 47, 73, 212, 12, 43, 206, 184, 18, 223, 208, 59, 244, 208, 59, 244, 184, 18, 223, 87, 201, 32, 128, 236, 76, 128, 236, 76, 87, 201, 32, 12, 214, 232, 78, 228, 242, 78, 228, 242, 12, 214, 232, 12, 43, 206, 47, 73, 212, 47, 73, 212, 12, 43, 206, 184, 18, 223, 208, 59, 244, 208, 59, 244, 184, 18, 223, 87, 201, 32, 87, 201, 32, 87, 201, 32, 87, 201, 32, 12, 214, 232, 12, 214, 232, 12, 214, 232, 12, 214, 232, 12, 43, 206, 12, 43, 206, 12, 43, 206, 12, 43, 206, 184, 18, 223, 184, 18, 223, 184, 18, 223, 184, 18, 223, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 255, 174, 174, 255, 174, 174, 255, 174, 174, 255, 174, 174, 255, 224, 174, 255, 224, 174, 255, 224, 174, 255, 224, 174, 247, 255, 174, 247, 255, 174, 247, 255, 174, 247, 255, 174, 144, 144, 144, 174, 174, 174, 174, 174, 174, 144, 144, 144, 255, 174, 174, 255, 234, 234, 255, 234, 234, 255, 174, 174, 255, 224, 174, 255, 249, 238, 255, 249, 238, 255, 224, 174, 247, 255, 174, 254, 255, 246, 254, 255, 246, 247, 255, 174, 144, 144, 144, 174, 174, 174, 174, 174, 174, 144, 144, 144, 255, 174, 174, 255, 234, 234, 255, 234, 234, 255, 174, 174, 255, 224, 174, 255, 249, 238, 255, 249, 238, 255, 224, 174, 247, 255, 174, 254, 255, 246, 254, 255, 246, 247, 255, 174, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 144, 255, 174, 174, 255, 174, 174, 255, 174, 174, 255, 174, 174, 255, 224, 174, 255, 224, 174, 255, 224, 174, 255, 224, 174, 247, 255, 174, 247, 255, 174, 247, 255, 174, 247, 255, 174, 183, 255, 161, 183, 255, 161, 183, 255, 161, 183, 255, 161, 174, 255, 244, 174, 255, 244, 174, 255, 244, 174, 255, 244, 174, 187, 255, 174, 187, 255, 174, 187, 255, 174, 187, 255, 241, 182, 255, 241, 182, 255, 241, 182, 255, 241, 182, 255, 183, 255, 161, 233, 255, 227, 233, 255, 227, 183, 255, 161, 174, 255, 244, 223, 255, 251, 223, 255, 251, 174, 255, 244, 174, 187, 255, 223, 228, 255, 223, 228, 255, 174, 187, 255, 241, 182, 255, 249, 223, 255, 249, 223, 255, 241, 182, 255, 183, 255, 161, 233, 255, 227, 233, 255, 227, 183, 255, 161, 174, 255, 244, 223, 255, 251, 223, 255, 251, 174, 255, 244, 174, 187, 255, 223, 228, 255, 223, 228, 255, 174, 187, 255, 241, 182, 255, 249, 223, 255, 249, 223, 255, 241, 182, 255, 183, 255, 161, 183, 255, 161, 183, 255, 161, 183, 255, 161, 174, 255, 244, 174, 255, 244, 174, 255, 244, 174, 255, 244, 174, 187, 255, 174, 187, 255, 174, 187, 255, 174, 187, 255, 241, 182, 255, 241, 182, 255, 241, 182, 255, 241, 182, 255])
+}
+
+function toRealIndices(indices, vals) {
+    let ind = []
+    indices.forEach(r => {
+        let nr = []
+        r.forEach(i => {
+            nr.push(vals[i])
+        })
+        ind.push(nr);
+    });
+    return ind;
+}
+
+function toTilemap(spritesheet, indices) {
+    let width = indices[0].length
+    let height = indices.length
+    let tilemap = {width: width, height: height, data: new Uint8Array(width * height * 3)};
+    for (let i = 0; i < indices.length; i++) {
+        const row = indices[indices.length - 1 - i];
+        for (let j = 0; j < row.length; j++) {
+            const pair = row[j];
+            const x = pair[0] * 256 * spritesheet.spriteWidth / spritesheet.width;
+            const y = pair[1] * 256 * spritesheet.spriteHeight / spritesheet.height;
+            tilemap.data[(i * width + j) * 3] = x;
+            tilemap.data[(i * width + j) * 3 + 1] = y;
+        }
+    }
+    return tilemap;
+}
+
+function showVal(val) {
+    let score = document.getElementById("score");
+    score.textContent = `Score: ${val}`
+}
+
+function showLevel(val) {
+    let score = document.getElementById("level");
+    score.textContent = `Level ${val}`
+}
+
+let registeredKeyHandlers = {};
+
+const FPS = 1/60;
+
+const KEYS = {
+    "LEFT": [true, ["a", "ArrowLeft"]],
+    "RIGHT": [true, ["d", "ArrowRight"]],
+    "SOFT": [true, ["s", "ArrowDown"]],
+    "HARD": [false, [" ", "Enter", "t"]],
+    "CLOCKWISE": [false, ["w", "x", "ArrowUp"]],
+    "COUNTERCLOCKWISE": [false, ["z", "Control"]],
+    "HOLD": [false, ["c", "Shift"]],
+}
+
+function clearHandler() {
+    document.getElementById("message").textContent = "GAME OVER"
+    registeredKeyHandlers = {};
+    ticker = () => {};
+    noInput = () => {};
+}
+
+function inputHandler(KEY, handler) {
+    KEYS[KEY][1].forEach(key => {
+        registeredKeyHandlers[key] = [KEYS[KEY][0], handler];
+    });
+}
+
+let noInput = () => {};
+let ticker = () => {};
+
+let frameKeyEvents = [];
+
+window.onkeydown = ev => {
+    /**@type KeyboardEvent */
+    let e = ev;
+    if (!e.repeat) {
+        for (const key in registeredKeyHandlers) {
+            if (key === e.key) {
+                if (Object.hasOwnProperty.call(registeredKeyHandlers, key)) {
+                    const two = registeredKeyHandlers[key];
+                    if (frameKeyEvents.findIndex(x => x[0] == key) == -1) {
+                        frameKeyEvents.push([key, two[0], two[1], false]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+window.onkeyup = ev => {
+    /**@type KeyboardEvent */
+    let e = ev;
+    for (const key in registeredKeyHandlers) {
+        if (key === e.key) {
+            if (Object.hasOwnProperty.call(registeredKeyHandlers, key)) {
+                let i = frameKeyEvents.findIndex(x => x[0] == key)
+                if (i != -1) {
+                    frameKeyEvents.splice(i, 1)
+                }
+            }
+        }
+    }
+}
+
+setInterval(() => {
+    if (frameKeyEvents.length === 0) {
+        noInput();
+    }
+    frameKeyEvents.forEach(four => {
+        if (four[3] === false) {
+            four[2]();
+            if (!four[1]) {
+                four[3] = true;
+            }
+        }
+    });
+    ticker();
+}, FPS * 1000);
+
+
+
+const DAS = 10
+const ARR = 2
+const ARE = 6
+
+const FRAMEGROUNDLOCK = 30
+const FRAMEMOVELOCK = 15
+
+const PIECESBUFFER = 6
+
+const _ = 0;
+const R = 1;
+const O = 2;
+const Y = 3;
+const G = 4;
+const C = 5;
+const B = 6;
+const M = 7;
+const XX = 8;
+
+const GHOFF = 8;
+
+const GR = 9;
+const GO = 10;
+const GY = 11;
+const GG = 12;
+const GC = 13;
+const GB = 14;
+const GM = 15;
+
+const _U = 16;
+const HH = 17;
+const TR = 18;
+var game;
+
+const INDICES = [
+    [0, 0],
+    [1, 0],
+    [2, 0],
+    [3, 0],
+    [0, 1],
+    [1, 1],
+    [2, 1],
+    [3, 1],
+    [0, 2],
+    [1, 2],
+    [2, 2],
+    [3, 2],
+    [0, 3],
+    [1, 3],
+    [2, 3],
+    [3, 3],
+];
+
+class Game {
+    activePiece;
+    rotationSystem;
+    randomizer;
+    constructor(rotationSystem, randomizer) {
+        this.solidTiles = [
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+        ];
+        this.buffer = [
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+            [_, _, _, _, _, _, _, _, _, _],
+        ];
+        this.rotationSystem = rotationSystem;
+        this.randomizer = randomizer;
+        this.leftHeldForFrames = 0;
+        this.rightHeldForFrames = 0;
+        this.softHeldForFrames = 0;
+        this.pieceOnGroundFor = 0;
+        this.groundMovements = 0;
+        this.lowestGroundY = 0;
+        this.gravityCountdown = 0;
+        this.areCountdown = ARE;
+        this.currentLevel = 0;
+        this.currentLineClears = 0;
+        this.lastIsRotation = false;
+        this.lastRotationTry = 0;
+        this.currentScore = 0;
+        this.solidifiedTiles = false;
+        this.pieceBuffer = []
+        this.heldPiece = undefined
+        this.pieceHeld = false;
+        for (let i = 0; i < PIECESBUFFER; i++) {
+            this.pieceBuffer.push(this.randomizer.nextPiece());
+        }
+    }
+    holdingPiece() {
+        return this.heldPiece !== undefined
+    }
+    framesInCountdown() {
+        //fdhsajklfhasklf
+        return Math.ceil(Math.pow(0.8 - this.currentLevel * 0.007, this.currentLevel) / FPS)
+    }
+    pressStrafeKey(left) {
+        if (left) {
+            if (this.leftHeldForFrames == 0) {
+                this.strafeLeft();
+            }
+            else if (this.leftHeldForFrames < DAS) {
+                 
+            }
+            else if ((this.leftHeldForFrames - DAS) % ARR === 0) {
+                this.strafeLeft();
+            }
+            this.leftHeldForFrames++;
+        }
+        else {
+            if (this.rightHeldForFrames == 0) {
+                this.strafeRight();
+            }
+            else if (this.rightHeldForFrames < DAS) {
+                 
+            }
+            else if ((this.rightHeldForFrames - DAS) % ARR === 0) {
+                this.strafeRight();
+            }
+            this.rightHeldForFrames++;
+        }
+    } 
+    pressNoKey() {
+        this.leftHeldForFrames = 0;
+        this.rightHeldForFrames = 0;
+    }
+    afterInput() {
+        if (this.over) {
+            clearHandler();
+        }
+        else {
+            this.areCountdown--;
+            if (this.areCountdown === 0) {
+                this.getNewPiece();
+            }
+            else if (this.areCountdown < 0) {
+                this.gravityCountdown--; 
+                if (this.gravityCountdown <= 0) {
+                    if (!this.pieceIsOnGround()) {
+                        this.movePieceDown(1);
+                        this.lastIsRotation = false;
+                    }
+                    this.gravityCountdown = this.framesInCountdown();
+                }
+                if (this.lowestGroundY > this.activePiece.currentY) {
+                    this.groundMovements = 0;
+                    this.lowestGroundY = this.activePiece.currentY;
+                }
+            }
+            if (this.pieceIsOnGround()) {
+                this.pieceOnGroundFor++;
+                if (this.pieceOnGroundFor > FRAMEGROUNDLOCK || this.groundMovements > FRAMEMOVELOCK) {
+                    this.makePieceSolid();
+                }
+            }
+            else {
+                this.pieceOnGroundFor = 0;
+            }
+            if (this.solidifiedTiles || this.tSpun || this.miniTSpun) {
+                this.updateScoreLine(this.removeLines(this.checkLineClears()));
+                this.solidifiedTiles = false
+                this.tSpun = false;
+                this.miniTSpun = false;
+                this.lastIsRotation = false;
+            }
+            this.render();
+        }
+    }
+    updateScoreDrop(hard) {
+        if (hard) {
+            this.currentScore++;   
+            this.currentScore++;   
+        }
+        else {
+            this.currentScore++;   
+        }
+    }
+    updateScoreLine(lines) {
+        let x;
+        let back = false;
+        let msg = undefined;
+        switch (lines) {
+            case 4:
+                x = 8
+                back = true;
+                msg = this.backToBack ? "tetris back to back" : "tetris"
+                break;
+            case 3:
+                if (this.tSpun) {
+                    back = true;
+                    x = 16;
+                    msg = this.backToBack ? "t-spin triple back to back" : "t-spin triple"
+                }
+                else {
+                    x = 5;
+                    back = false
+                    msg = "triple"
+                }
+                break;
+            case 2:
+                if (this.tSpun) {
+                    back = true;
+                    x = 12;
+                    msg = this.backToBack ? "t-spin double back to back" : "t-spin double"
+                }
+                else {
+                    back = false
+                    x = 3
+                    msg = "double"
+                }
+                break;
+            case 1:
+                if (this.miniTSpun) {
+                    back = true;
+                    x = 2
+                    msg = this.backToBack ? "mini t-spin single back to back" : "mini t-spin single"
+                }
+                else if (this.tSpun) {
+                    back = true;
+                    x = 8;
+                    msg = this.backToBack ? "t-spin single back to back" : "t-spin single"
+                }
+                else {
+                    back = false
+                    x = 1
+                    msg = "single"
+                }
+                break;
+            default:
+                if (this.miniTSpun) {
+                    x = 1;
+                    back = true
+                    msg = this.backToBack ? "mini t-spin back to back" : "mini t-spin"
+                    break;
+                }
+                if (this.tSpun) {
+                    x = 4
+                    back = true
+                    msg = this.backToBack ? "t-spin back to back" : "t-spin"
+                    break
+                }
+                else {
+                    x = 0
+                    back = this.backToBack;
+                }
+                break;
+            }
+        if (this.backToBack && back) {
+            x = x * 1.5
+        }
+        this.backToBack = back
+        this.currentScore += (this.currentLevel + 1) * x * 100
+        this.currentLineClears = this.currentLineClears + x;
+        if (this.currentLineClears > this.nextGoal()) {
+            this.currentLevel ++;
+        }
+        if (msg !== undefined) {
+            let message = document.getElementById("message");
+            message.textContent = msg.toUpperCase()
+        }
+    }
+    nextGoal() {
+        if (this.currentLevel < 14) {
+            return [5, 15, 30, 50, 65, 75, 100, 130, 165, 205, 250, 300, 355][this.currentLevel]
+        }
+        return Infinity
+    }
+    pressRotateKey(clockwise) {
+        if (this.pieceIsUndefined()) {
+            return;
+        }
+        if (clockwise) {
+            let two = this.activePiece.rotateClockwise()
+            if (two[0]) {
+                this.pieceOnGroundFor = 0;
+            }
+            this.lastRotationTry = two[1]
+            this.lastIsRotation = true
+        }
+        else {
+            let two = this.activePiece.rotateCounterclockwise()
+            if (two[0]) {
+                this.pieceOnGroundFor = 0;
+            }
+            this.lastRotationTry = two[1]
+            this.lastIsRotation = true
+        }
+    }
+    strafeLeft() {
+        if (this.pieceIsUndefined()) {
+            return;
+        }
+        if (!this.pieceIsOnLeft()) {
+            this.activePiece.currentX--;
+            this.pieceOnGroundFor = 0;
+            if (this.pieceIsOnGround()) {
+                this.groundMovements++;
+            }
+            this.lastIsRotation = false
+        }
+    }
+    strafeRight() {
+        if (this.pieceIsUndefined()) {
+            return;
+        }
+        if (!this.pieceIsOnRight()) {
+            this.activePiece.currentX++;
+            this.pieceOnGroundFor = 0;
+            if (this.pieceIsOnGround()) {
+                this.groundMovements++;
+            }
+            this.lastIsRotation = false
+        }
+    }
+    pressSoftKey() {
+        if (this.softHeldForFrames === 0) {
+            this.lastIsRotation = false
+            this.movePieceDown(1);
+            this.updateScoreDrop(false);
+            if (!this.pieceIsUndefined()) {
+                if (this.lowestGroundY > this.activePiece.currentY) {
+                    this.groundMovements = 0;
+                    this.lowestGroundY = this.activePiece.currentY;
+                }
+            }
+        }
+        this.softHeldForFrames++;
+        this.softHeldForFrames %= Math.ceil(this.framesInCountdown() / 20);
+    }
+    pressHardKey() {
+        this.dropPieceDown(false);
+        this.makePieceSolid();
+    }
+    pressHoldKey() {
+        if (!this.pieceHeld && !this.pieceIsUndefined()) {
+            this.pieceHeld = true;
+            if (this.holdingPiece()) {
+                let temp = this.heldPiece;
+                this.heldPiece = this.activePiece;
+                this.heldPiece.currentRotation = 0;
+                this.activePiece = temp;
+                this.activePiece.currentX = (this.activePiece instanceof O_) ? 4 : 3;
+                this.activePiece.currentY = (this.activePiece instanceof I_) ? 17 : 18;
+            }
+            else {
+                this.heldPiece = this.activePiece;
+                this.heldPiece.currentRotation = 0;
+                this.getNewPiece();
+            }
+        }
+    }
+    getNewPiece() {
+        this.activePiece = this.pieceBuffer.shift();
+        this.pieceBuffer.push(this.randomizer.nextPiece());
+        if (!this.activePiece.validPlacementWithOffset([0, 0])) {
+            this.over = true;
+        }
+    }
+    solidValueAt(x, y) {
+        if (y < this.buffer.length) {
+            return this.buffer[y][x];
+        }
+        else {
+            return this.solidTiles[y - this.buffer.length][x];
+        }
+    }
+    validPiecePosition(bbox, x, y) {
+        for (let i = 0; i < bbox.length; i++) {
+            for (let j = 0; j < bbox[0].length; j++) {
+                if (bbox[i][j] !== _) {
+                    if (i + y < 0 || j + x < 0 || i + y >= this.buffer.length + this.solidTiles.length || j + x > 10) {
+                        return false;
+                    }
+                    if (this.solidValueAt(j + x, i + y) !== _) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+    pieceIsUndefined() {
+        return this.activePiece === undefined
+    }
+    pieceIsOnGround() {
+        if (this.pieceIsUndefined()) {
+            return false;
+        }
+        return !this.activePiece.validPlacementWithOffset([0, 1]);
+    }
+    pieceIsOnLeft() {
+        if (this.pieceIsUndefined()) {
+            return false;
+        }
+        return !this.activePiece.validPlacementWithOffset([-1, 0]);
+    }
+    pieceIsOnRight() {
+        if (this.pieceIsUndefined()) {
+            return false;
+        }
+        return !this.activePiece.validPlacementWithOffset([1, 0]);
+    }
+    movePieceDown(amount) {
+        if (this.pieceIsUndefined()) {
+            return;
+        }
+        for (let i = 0; i < amount; i++) {
+            if (!this.pieceIsOnGround()) {
+                this.activePiece.currentY++;
+            }
+        }
+    }
+    dropPieceDown(ghost) {
+        if (this.pieceIsUndefined()) {
+            return;
+        }
+        while (!this.pieceIsOnGround()) {
+            if (!ghost) {
+                this.updateScoreDrop(true);
+                this.lastIsRotation = false
+            }
+            this.activePiece.currentY++;
+        }
+    }
+    makePieceSolid() {
+        if (this.pieceIsUndefined()) {
+            return;
+        }
+        if (this.activePiece instanceof T_ && this.lastIsRotation) {
+            if (this.lastRotationTry === 4) {
+                this.tSpun = true
+            }
+            else {
+                let x = this.activePiece.currentX;
+                let y = this.activePiece.currentY;
+                let requiredCorners = [
+                    [[0, 0], [0, 2]],
+                    [[0, 2], [2, 2]],
+                    [[2, 0], [2, 2]],
+                    [[0, 0], [2, 0]],
+                ]
+                let optionalCorners = [
+                    [[2, 2], [2, 0]],
+                    [[0, 0], [2, 0]],
+                    [[0, 2], [0, 0]],
+                    [[2, 0], [2, 2]],
+                ]
+                let req = requiredCorners[this.activePiece.currentRotation];
+                let opt = optionalCorners[this.activePiece.currentRotation];
+                bottoms = 0;
+                req.forEach(ij => {
+                    let i = x + ij[1]
+                    let j = y + ij[0]
+                    if (j < this.buffer.length) {
+                        if (this.buffer[j][i] !== _) {
+                            bottoms++;
+                        }
+                    }
+                    else {
+                        if (this.solidTiles[j- this.buffer.length][i] != _) {
+                            bottoms++;
+                        }
+                    }
+                });
+                tops = 0
+                opt.forEach(ij => {
+                    let i = x + ij[1]
+                    let j = y + ij[0]
+                    if (j < this.buffer.length) {
+                        if (this.buffer[j][i] !== _) {
+                            tops++;
+                        }
+                    }
+                    else {
+                        if (this.solidTiles[j - this.buffer.length][i] != _) {
+                            tops++;
+                        }
+                    }
+                });
+                if (bottoms == 2 && tops > 0) {
+                    this.tSpun = true
+                }
+                else if (tops == 2 && bottoms > 0) {
+                    this.miniTSpun = true
+                }
+            }
+        }
+        this.lastRotationTry = 0;
+        let x = this.activePiece.currentX;
+        let y = this.activePiece.currentY;
+        let bbox = this.activePiece.getBox(this.activePiece.currentRotation);
+        let up = true;
+        for (let i = 0; i < bbox.length; i++) {
+            for (let j = 0; j < bbox[0].length; j++) {
+                let value = bbox[i][j];
+                if (value !== _) {
+                    if (i + y < this.buffer.length) {
+                        this.buffer[i + y][j + x] = value;
+                    }
+                    else {
+                        up = false;
+                        this.solidTiles[i + y - this.buffer.length][j + x] = value;
+                    }
+                }
+            }
+        }
+        this.areCountdown = ARE;
+        this.activePiece = undefined;
+        this.pieceHeld = false;
+        this.solidifiedTiles = true;
+        this.groundMovements = 0;
+        this.pieceOnGroundFor = 0;
+        if (up) {
+            this.over = true;
+        }
+    }
+    checkLineClears() {
+        let lines = [];
+        for (let i = this.solidTiles.length - 1; i >= 0; i--) {
+            const row = this.solidTiles[i];
+            let line = true;
+            for (let j = 0; j < row.length; j++) {
+                const element = row[j];
+                if (element === _) {
+                    line = false;
+                }
+            }
+            if (line) {
+                lines.push(i);
+            }
+        }
+        lines.sort((a, b) => a - b)
+        return lines;
+    }
+    removeLines(lines) {
+        let count = 0;
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            for (let j = line; j >= 0; j--) {
+                if (j > 0) {
+                    this.solidTiles[j] = JSON.parse(JSON.stringify(this.solidTiles[j - 1]));
+                }
+                else {
+                    this.solidTiles[0] = JSON.parse(JSON.stringify(this.buffer[this.buffer.length - 1]));
+                }
+            }
+            for (let j = this.buffer.length - 1; j > 0; j--) {
+                this.buffer[j] = JSON.parse(JSON.stringify(this.buffer[j - 1]));
+            }
+            count++
+        }
+        return count;
+    }
+    drawActivePieceIndices(indices, ghost) {
+        if (this.pieceIsUndefined()) {
+            return;
+        }
+        let box = this.activePiece.getBox(this.activePiece.currentRotation);
+        for (let i = 0; i < box.length; i++) {
+            const row = box[i];
+            for (let j = 0; j < row.length; j++) {
+                let value = row[j];
+                if (value !== _) {
+                    if (ghost) {
+                        if (i + this.activePiece.currentY - this.buffer.length + 1 >= 0) {
+                            if (i + this.activePiece.currentY - this.buffer.length + 1 < indices.length) {
+                                if (indices[i + this.activePiece.currentY - this.buffer.length + 1][j + this.activePiece.currentX] === _) {
+                                    indices[i + this.activePiece.currentY - this.buffer.length + 1][j + this.activePiece.currentX] = value + GHOFF;
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        if (i + this.activePiece.currentY - this.buffer.length + 1 >= 0) {
+                            if (i + this.activePiece.currentY - this.buffer.length + 1 < indices.length) {
+                                indices[i + this.activePiece.currentY - this.buffer.length + 1][j + this.activePiece.currentX] = value;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    drawGhostPieceIndices(indices) {
+        if (this.pieceIsUndefined()) {
+            return;
+        }
+        let origY = this.activePiece.currentY + 1 - 1;
+        this.dropPieceDown(true);
+        this.drawActivePieceIndices(indices, true)
+        this.activePiece.currentY = origY;
+    }
+    expandFromMatrix(indices) {
+        indices.unshift([XX, XX, XX, XX, XX, XX, XX, XX, XX, XX]);
+        indices.push([XX, XX, XX, XX, XX, XX, XX, XX, XX, XX]);
+        indices.forEach(row => {
+            row.unshift(XX, XX, XX, XX, XX, XX)
+            row.push(XX, XX, XX, XX, XX, XX);
+        });
+    }
+    drawPieceBuffer(indices) {
+        let y = 1
+        let x = 17
+        for (let i = 0; i < this.pieceBuffer.length; i++) {
+            let box = this.pieceBuffer[i].getBox(this.pieceBuffer[i].currentRotation);
+            let ho = this.pieceBuffer[i].boxHeightOffset()
+            for (let j = ho[1]; j < ho[1] + ho[0]; j++) {
+                const row = box[j];
+                for (let k = 0; k < row.length; k++) {
+                    const val = row[k];
+                    if (val !== _) {
+                        indices[j - ho[1] + y][x + k] = val;
+                    }
+                }   
+            }
+            y += ho[0] + 1
+        }
+    }
+    drawHoldPiece(indices) {
+        let y = 1;
+        let x = 1;
+        if (this.holdingPiece()) {
+            let box = this.heldPiece.getBox(0);
+            let ho = this.heldPiece.boxHeightOffset()
+            for (let j = ho[1]; j < ho[1] + ho[0]; j++) {
+                const row = box[j];
+                for (let k = 0; k < row.length; k++) {
+                    const val = row[k];
+                    if (val !== _) {
+                        indices[j - ho[1] + y][x + k] = val;
+                    }
+                }   
+            }
+        }
+    }
+    getTileIndices() {
+        let indices = [];
+        let nr = [];
+        this.buffer[this.buffer.length - 1].forEach(value => {
+            nr.push(value);
+        })
+        indices.push(nr);
+        this.solidTiles.forEach(row => {
+            let nr = [];
+            row.forEach(value => {
+                nr.push(value);
+            })
+            indices.push(nr);
+        });
+        this.drawActivePieceIndices(indices, false);
+        this.drawGhostPieceIndices(indices);
+        this.expandFromMatrix(indices);
+        this.drawPieceBuffer(indices);  
+        this.drawHoldPiece(indices);  
+        return indices
+    }
+    render() {
+        const spritesheet = {
+            width: 16, 
+            height: 16, 
+            spriteWidth: 4, 
+            spriteHeight: 4, 
+            data: getPixels()
+        };
+        let tilemap = toTilemap(spritesheet, toRealIndices(this.getTileIndices(), INDICES));
+        initializeProgram(spritesheet, tilemap);
+        showVal(this.currentScore);
+        showLevel(this.currentLevel + 1);
+    }
+}
+
+class Piece {
+    initial;
+    rotations;
+    currentRotation = 0;
+    currentX;
+    currentY;
+    constructor(s,l) {
+        this.currentX = s ? 4 : 3;
+        this.currentY = l ? 17 : 18;
+    }
+    getBox(rotation) {
+        return this.rotations[rotation];
+    }
+    boxHeightOffset() {
+        let box = this.getBox(this.currentRotation);
+        let blocks = [];
+        for (let i = 0; i < box.length; i++) {
+            const row = box[i];
+            let block = false
+            for (let j = 0; j < row.length; j++) {
+                const value = row[j];
+                if (value !== _) {
+                    block = true;
+                }
+            }
+            blocks.push(block)
+        }
+        let off = 0
+        while (!blocks[0]) {
+            off += 1;
+            blocks.shift();
+        }
+        while (!blocks[blocks.length - 1]) {
+            blocks.pop();
+        }
+        return [blocks.length, off];
+    }
+    rotateClockwise() {
+        let two = game.rotationSystem.rotate(this, this.currentRotation, (this.currentRotation + 1) % 4)
+        let good = true;
+        if (two[0] == this.currentRotation) {
+            good = false;
+        }
+        this.currentRotation = two[0];
+        this.currentX += two[1][0];
+        this.currentY += two[1][1];
+        return [good, two[2]]
+    }
+    rotateCounterclockwise() {
+        let two = game.rotationSystem.rotate(this, this.currentRotation, (this.currentRotation + 3) % 4)
+        let good = true;
+        if (two[0] == this.currentRotation) {
+            good = false;
+        }
+        this.currentRotation = two[0];
+        this.currentX += two[1][0];
+        this.currentY += two[1][1];
+        return [good, two[2]]
+    }
+    validPlacementWithOffset(offset) {
+        return game.validPiecePosition(this.getBox(this.currentRotation), this.currentX + offset[0], this.currentY + offset[1])
+    }
+    validPlacementWithRotationOffset(rotation, offset) {
+        return game.validPiecePosition(this.getBox(rotation), this.currentX + offset[0], this.currentY + offset[1])
+    }
+}
+
+class I_ extends Piece {
+    initial = [
+        [_, _, _, _, _, _, _, _, _, _],
+        [_, _, _, C, C, C, C, _, _, _],
+    ]
+    rotations = [
+        [
+            [_, _, _, _],
+            [_, _, _, _],
+            [C, C, C, C],
+            [_, _, _, _],
+        ],
+        [
+            [_, _, C, _],
+            [_, _, C, _],
+            [_, _, C, _],
+            [_, _, C, _],
+        ],
+        [
+            [_, _, _, _],
+            [C, C, C, C],
+            [_, _, _, _],
+            [_, _, _, _],
+        ],
+        [
+            [_, C, _, _],
+            [_, C, _, _],
+            [_, C, _, _],
+            [_, C, _, _],
+        ],
+    ]
+}
+class O_ extends Piece {
+    initial = [
+        [_, _, _, _, Y, Y, _, _, _, _],
+        [_, _, _, _, Y, Y, _, _, _, _],
+    ]
+    rotations = [
+        [
+            [Y, Y],
+            [Y, Y],
+        ],
+        [
+            [Y, Y],
+            [Y, Y],
+        ],
+        [
+            [Y, Y],
+            [Y, Y],
+        ],
+        [
+            [Y, Y],
+            [Y, Y],
+        ],
+    ]
+}
+class T_ extends Piece {
+    initial = [
+        [_, _, _, _, M, _, _, _, _, _],
+        [_, _, _, M, M, M, _, _, _, _],
+    ]
+    rotations = [
+        [
+            [_, M, _],
+            [M, M, M],
+            [_, _, _],
+        ],
+        [
+            [_, M, _],
+            [_, M, M],
+            [_, M, _],
+        ],
+        [
+            [_, _, _],
+            [M, M, M],
+            [_, M, _],
+        ],
+        [
+            [_, M, _],
+            [M, M, _],
+            [_, M, _],
+        ],
+    ]
+}
+class S_ extends Piece {
+    initial = [
+        [_, _, _, _, G, G, _, _, _, _],
+        [_, _, _, G, G, _, _, _, _, _],
+    ]
+    rotations = [
+        [
+            [_, G, G],   
+            [G, G, _],   
+            [_, _, _],   
+        ],
+        [
+            [_, G, _],   
+            [_, G, G],   
+            [_, _, G],   
+        ],
+        [
+            [_, _, _],   
+            [_, G, G],   
+            [G, G, _],   
+        ],
+        [
+            [G, _, _],   
+            [G, G, _],   
+            [_, G, _],   
+        ],
+    ]
+}
+class Z_ extends Piece {
+    initial = [
+        [_, _, _, R, R, _, _, _, _, _],
+        [_, _, _, _, R, R, _, _, _, _],
+    ]
+    rotations = [
+        [
+            [R, R, _],
+            [_, R, R],
+            [_, _, _],
+        ],
+        [
+            [_, _, R],
+            [_, R, R],
+            [_, R, _],
+        ],
+        [
+            [_, _, _],
+            [R, R, _],
+            [_, R, R],
+        ],
+        [
+            [_, R, _],
+            [R, R, _],
+            [R, _, _],
+        ],
+    ]
+}
+class J_ extends Piece {
+    initial = [
+        [_, _, _, B, _, _, _, _, _, _],
+        [_, _, _, B, B, B, _, _, _, _],
+    ]
+    rotations = [
+        [
+            [B, _, _],
+            [B, B, B],
+            [_, _, _],
+        ],
+        [
+            [_, B, B],
+            [_, B, _],
+            [_, B, _],
+        ],
+        [
+            [_, _, _],
+            [B, B, B],
+            [_, _, B],
+        ],
+        [
+            [_, B, _],
+            [_, B, _],
+            [B, B, _],
+        ],
+    ]
+}
+class L_ extends Piece {
+    initial = [
+        [_, _, _, _, _, O, _, _, _, _],
+        [_, _, _, O, O, O, _, _, _, _],
+    ]
+    rotations = [
+        [
+            [_, _, O],
+            [O, O, O],
+            [_, _, _],
+        ],
+        [
+            [_, O, _],
+            [_, O, _],
+            [_, O, O],
+        ],
+        [
+            [_, _, _],
+            [O, O, O],
+            [O, _, _],
+        ],
+        [
+            [O, O, _],
+            [_, O, _],
+            [_, O, _],
+        ],
+    ]
+}
+
+class RotationSystem {
+    rotate(piece, from, to) {}
+}
+
+class KicklessSRS extends RotationSystem {
+    rotate(piece, from, to) {
+        if (piece.validPlacementWithRotationOffset(to, offset)) {
+            return [to, [0, 0], 0];
+        }
+        else {
+            return [from, [0, 0], 0];
+        }
+    }
+}
+
+class SRS extends RotationSystem {
+    wallKickData(piece) {
+        if (piece instanceof O_) {
+            return [
+                [[+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0]],
+                [[+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0]],
+                [[+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0]],
+                [[+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0]],
+                [[+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0]],
+                [[+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0]],
+                [[+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0]],
+                [[+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0], [+-0, +-0]],
+            ]
+        }
+        else if (piece instanceof I_) {
+            return [
+                [[+-0, +-0], [-2, +-0], [+1, +-0], [-2, +1], [+1, -2]], // 01
+                [[+-0, +-0], [-1, +-0], [+2, +-0], [-1, -2], [+2, +1]], // 12
+                [[+-0, +-0], [+2, +-0], [-1, +-0], [+2, -1], [-1, +2]], // 23
+                [[+-0, +-0], [+1, +-0], [-2, +-0], [+1, +2], [-2, -1]], // 30
+                [[+-0, +-0], [-1, +-0], [+2, +-0], [-1, -2], [+2, +1]], // 03
+                [[+-0, +-0], [+2, +-0], [+1, +-0], [-2, -1], [-1, +2]], // 10
+                [[+-0, +-0], [+1, +-0], [-2, +-0], [+1, +2], [-2, -1]], // 21
+                [[+-0, +-0], [-2, +-0], [+1, +-0], [-2, +1], [+1, -2]], // 32
+            ]
+        }
+        else {
+            return [
+                [[+-0, +-0], [-1, +-0], [-1, -1], [+-0, +2], [-1, +2]], // 01
+                [[+-0, +-0], [+1, +-0], [+1, +1], [+-0, -2], [+1, -2]], // 12
+                [[+-0, +-0], [+1, +-0], [+1, -1], [+-0, +2], [+1, +2]], // 23
+                [[+-0, +-0], [-1, +-0], [-1, +1], [+-0, -2], [-1, -2]], // 30
+                [[+-0, +-0], [+1, +-0], [+1, -1], [+-0, +2], [+1, +2]], // 03
+                [[+-0, +-0], [+1, +-0], [+1, +1], [+-0, -2], [+1, -2]], // 10
+                [[+-0, +-0], [-1, +-0], [-1, -1], [+-0, +2], [-1, +2]], // 21
+                [[+-0, +-0], [-1, +-0], [-1, +1], [+-0, -2], [-1, -2]], // 32
+            ]
+        }
+    }
+    rotate(piece, from, to) {
+        let wallKicks = this.wallKickData(piece);
+        let tries = wallKicks[from];
+        if (from > to) {
+            tries = wallKicks[from + 4];
+        }
+        for (let i = 0; i < tries.length; i++) {
+            const offset = tries[i];
+            if (piece.validPlacementWithRotationOffset(to, offset)) {
+                return [to, offset, i];
+            }
+        }
+        return [from, [0, 0], NaN];
+    }
+}
+
+class Randomizer {
+    nextPiece() {}
+}
+
+class SimpleRandomizer extends Randomizer {
+    nextPiece() {
+        let f = false;
+        let pieces = [new I_(f, true), new O_(true, f), new T_(f, f), new S_(f, f), new Z_(f, f), new J_(f, f), new L_(f, f)];
+        return pieces[Math.floor(Math.random() * 7)];
+    }
+}
+
+class SevenBag extends Randomizer {
+    constructor() {
+        super();
+        this.dealtPieces = [];
+    }
+    nextPiece() {
+        let f = false
+        let pieces = [new I_(f, true), new O_(true, f), new T_(f, f), new S_(f, f), new Z_(f, f), new J_(f, f), new L_(f, f)];
+        while (true) {
+            let i = Math.floor(Math.random() * 7);
+            if (this.dealtPieces.findIndex(x=> x == i) == -1) {
+                this.dealtPieces.push(i)
+                if (this.dealtPieces.length == 7) {
+                    this.dealtPieces = [];
+                }
+                return pieces[i];
+            }
+        }
+    }
+}
+
+window.onload = function() {
+    game = new Game(new SRS(), new SevenBag());
+    inputHandler("LEFT", () => game.pressStrafeKey(true));
+    inputHandler("RIGHT", () => game.pressStrafeKey(false));
+    inputHandler("SOFT", () => game.pressSoftKey());
+    inputHandler("HARD", () => game.pressHardKey());
+    inputHandler("CLOCKWISE", () => game.pressRotateKey(true));
+    inputHandler("COUNTERCLOCKWISE", () => game.pressRotateKey(false));
+    inputHandler("HOLD", () => game.pressHoldKey());
+    noInput = () => game.pressNoKey();
+    ticker = () => game.afterInput();
+}
+</script>
+<body>
+    <center>
+        <p><marquee>Tetris - Guideline 2022 Compliant!</marquee></p>
+        <p id="score">Score: 0</p> 
+        <p id="level">Level 0</p>
+        <canvas id="glCanvas" width="440" height="460">
+            Oh no! Your browser doesn't support canvas!
+        </canvas>
+        <p id="message"></p>
+    </center>
+    <canvas hidden id="hiddenCanvas"></canvas>
+</body>

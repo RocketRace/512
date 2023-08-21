@@ -1,0 +1,1 @@
+r=range(6);entry=lambda x,y:max((s for i in r for j in r if(s:=x[i:j])in y),key=len)

@@ -1,0 +1,398 @@
+[start]
+	state: starting state
+	symbol: T
+	position: p
+[symbols]
+	T: 0
+	L: 1
+	K: 2
+	V: 3
+[actions]
+	0: nothing
+	1: printf ("unmatched high surrogate at %d\n", p)
+	2: printf ("unmatched low surrogate at %d\n", p)
+	3: printf ("wrong state at %d\n", p);
+[accepting]
+	number: top-level zero
+	number: top-level int
+	number: top-level decimal
+	number: top-level power
+	value: done
+	value: totally done
+0  rejecting state
+1  starting state 
+	@T
+	\ef => json: BOM 1
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: ready
+	n   => null: n
+	t   => true: t
+	f   => false: f
+	-   => number: minus
+	0   => number: top-level zero
+	1~9 => number: top-level int
+	"   => string: clean
+	[   => value: ready +L
+	{   => value: ready +K
+2  json: BOM 1
+	@T
+	\bb => json: BOM 2
+3  json: BOM 2
+	@T
+	\bf => value: ready
+4  value: ready
+	@T, L, V
+	n   => null: n
+	t   => true: t
+	f   => false: f
+	-   => number: minus
+	"   => string: clean
+	[   => value: ready +L
+	{   => value: ready +K
+	@T
+	0   => number: top-level zero
+	1~9 => number: top-level int
+	@L, V
+	0   => number: zero
+	1~9 => number: int
+	@T, L, K, V
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: ready
+	@L
+	] => value: done ~L
+	@K
+	"   => string: clean
+	}   => value: done ~K
+5  null: n
+	@T, L, V
+	u => null: u
+6  null: u
+	@T, L, V
+	l => null: l
+7  null: l
+	@T
+	l => value: totally done
+	@L, V
+	l => value: done
+8  true: t
+	@T, L, V
+	r => true: r
+9  true: r
+	@T, L, V
+	u => true: u
+10 true: u
+	@T
+	e => value: totally done
+	@L, V
+	e => value: done
+11 false: f
+	@T, L, V
+	a => false: a
+12 false: a
+	@T, L, V
+	l => false: l
+13 false: l
+	@T, L, V
+	s => false: s
+14 false: s
+	@T
+	e => value: totally done
+	@L, V
+	e => value: done
+15 number: minus
+	@T
+	0   => number: top-level zero
+	1~9 => number: top-level int
+	@L, V
+	0   => number: zero
+	1~9 => number: int
+16 number: zero
+	@L, V
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: done
+	@L
+	, => value: follow-up
+	] => value: done ~L
+	@V
+	, => value: follow-up ~V+K
+	} => value: done ~V
+	@L, V
+	. => number: point
+	e |
+	E => number: exp
+17 number: int
+	@L, V
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: done
+	0~9 => number: int
+	.   => number: point
+	e   |
+	E   => number: exp
+	@L
+	, => value: follow-up
+	] => value: done ~L
+	@V
+	, => value: follow-up ~V+K
+	} => value: done ~V
+18 number: point
+	@T
+	0~9 => number: top-level decimal
+	@L, V
+	0~9 => number: decimal
+19 number: decimal
+	@L, V
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: done
+	0~9 => number: decimal
+	e   |
+	E   => number: exp
+	@L
+	, => value: follow-up
+	] => value: done ~L
+	@V
+	, => value: follow-up ~V+K
+	} => value: done ~V
+20 number: exp
+	@T, L, V
+	+   |
+	-   => number: exp sign
+	@T
+	0~9 => number: top-level power
+	@L, V
+	0~9 => number: power
+21 number: exp sign
+	@T
+	0~9 => number: top-level power
+	@L, V
+	0~9 => number: power
+22 number: power
+	@L, V
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: done
+	0~9 => number: power
+	@L
+	, => value: follow-up
+	] => value: done ~L
+	@V
+	, => value: follow-up ~V+K
+	} => value: done ~V
+23 number: top-level zero
+	@T
+	. => number: point
+	e |
+	E => number: exp
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: totally done
+24 number: top-level int
+	@T
+	0~9 => number: top-level int
+	.   => number: point
+	e   |
+	E   => number: exp
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: totally done
+25 number: top-level decimal
+	@T
+	0~9 => number: top-level decimal
+	e   |
+	E   => number: exp
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: totally done
+26 number: top-level power
+	@T
+	0~9 => number: top-level power
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: totally done
+27 string: clean
+	@T, L, K, V
+	\20~\22 |
+	\23~\5b |
+	\5d~\7f => string: clean
+	\c2~\df => string: utf-8 length 2
+	\e0     => string: utf-8 length 3 low
+	\e1~\ef => string: utf-8 length 3 high
+	\f0     => string: utf-8 length 4 low
+	\f1~\f3 => string: utf-8 length 4 medium
+	\f4     => string: utf-8 length 4 high
+	\       => string: escape
+	@T
+	"       => value: totally done
+	@L, K, V
+	"       => value: done
+28 string: utf-8 length 2
+	@T, L, K, V
+	\80~\bf => string: clean
+29 string: utf-8 length 3 low
+	@T, L, K, V
+	\a0~\bf => string: utf-8 length 2
+30 string: utf-8 length 3 high
+	@T, L, K, V
+	\80~\bf => string: utf-8 length 2
+31 string: utf-8 length 4 low
+	@T, L, K, V
+	\90~\bf => string: utf-8 length 3 high
+32 string: utf-8 length 4 medium
+	@T, L, K, V
+	\80~\bf => string: utf-8 length 3 high
+33 string: utf-8 length 4 high
+	@T, L, K, V
+	\80~\8f => string: utf-8 length 3 high
+34 string: escape
+	@T, L, K, V
+	\22 |
+	\2f |
+	\5c |
+	\62 |
+	\66 |
+	\6e |
+	\72 |
+	\74 => string: clean
+	\75 => string: unicode escape
+35 string: unicode escape
+	@T, L, K, V
+	0~9 |
+	a~c |
+	e~f |
+	A~C |
+	E~F => string: non-surrogate unicode escape 1
+	d   |
+	D   => string: high surrogate 1
+36 string: non-surrogate unicode escape 1
+	@T, L, K, V
+	0~9 |
+	a~f |
+	A~F => string: non-surrogate unicode escape 2
+37 string: non-surrogate unicode escape 2
+	@T, L, K, V
+	0~9 |
+	a~f |
+	A~F => string: non-surrogate unicode escape 3
+38 string: non-surrogate unicode escape 3
+	@T, L, K, V
+	0~9 |
+	a~f |
+	A~F => string: clean
+39 string: high surrogate 1
+	@T, L, K, V
+	0~7 => string: non-surrogate unicode escape 2
+	c~f |
+	C~F => string: non-surrogate unicode escape 2 [action 1]
+	8~9 |
+	a~b |
+	A~B => string: high surrogate 2
+40 string: high surrogate 2
+	@T, L, K, V
+	0~9 |
+	a~f |
+	A~F => string: high surrogate 3
+41 string: high surrogate 3
+	@T, L, K, V
+	0~9 |
+	a~f |
+	A~F => string: unclean
+42 string: unclean
+	@T, L, K, V
+	\20~\22 |
+	\23~\5b |
+	\5d~\7f => string: clean                 [action 2]
+	\c2~\df => string: utf-8 length 2        [action 2]
+	\e0     => string: utf-8 length 3 low    [action 2]
+	\e1~\ef => string: utf-8 length 3 high   [action 2]
+	\f0     => string: utf-8 length 4 low    [action 2]
+	\f1~\f3 => string: utf-8 length 4 medium [action 2]
+	\f4     => string: utf-8 length 4 high   [action 2]
+	\       => string: follow-up escape
+	@T
+	"       => value: totally done           [action 2]
+	@L, K, V
+	"       => value: done                   [action 2]
+43 string: follow-up escape
+	@T, L, K, V
+	\22 |
+	\2f |
+	\5c |
+	\62 |
+	\66 |
+	\6e |
+	\72 |
+	\74 => string: clean [action 2]
+	\75 => string: follow-up unicode escape
+44 string: follow-up unicode escape
+	@T, L, K, V
+	0~9 |
+	a~c |
+	e~f |
+	A~C |
+	E~F => string: non-surrogate unicode escape 1 [action 2]
+	d   |
+	D   => string: low surrogate
+45 string: low surrogate
+	@T, L, K, V
+	0~9 |
+	a~b |
+	A~B => string: non-surrogate unicode escape 2 [action 2]
+	c~f |
+	C~F => string: non-surrogate unicode escape 2
+46 value: done
+	@L
+	, => value: follow-up
+	] => value: done ~L
+	@K
+	: => value: ready ~K+V
+	@V
+	, => value: follow-up ~V+K
+	} => value: done ~V
+	@L, K, V
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: done
+	@T
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: totally done
+47 value: follow-up
+	@L, K
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: follow-up
+	n   => null: n
+	t   => true: t
+	f   => false: f
+	-   => number: minus
+	0   => number: zero
+	1~9 => number: int
+	"   => string: clean
+	[   => value: ready +L
+	{   => value: ready +K
+48 value: totally done
+	@T
+	\09 |
+	\0a |
+	\0d |
+	\20 => value: totally done
+49 funky
+	@T, L, K, V
+	\00~\ff => funky [action 3] +T
