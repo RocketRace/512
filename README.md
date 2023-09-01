@@ -16,3 +16,4 @@ My favorites entries (in chronological order) are:
 - #32 (A maze generator written in Zirconium)
 - #37 (Poorly computing digital roots using machine learning)
 - #39 (More code art, this time in Haskell)
+- #42 (A game of 2048 on a tiny terminal screen)
