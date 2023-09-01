@@ -4,5 +4,4 @@
 **/dist-newstyle
 **/.ipynb_checkpoints
 **/.mypy_cache
-**/Cargo.lock
 **/target
