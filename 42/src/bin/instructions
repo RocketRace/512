@@ -1,3 +1,4 @@
 slide: arrows/WASD
 retry: R
 exit: ^C
+use a font with proper braille

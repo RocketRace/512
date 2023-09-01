@@ -37,6 +37,9 @@ impl IndexMut<u16> for Grid {
     }
 }
 impl Grid {
+    fn iter(&self) -> impl Iterator<Item = &Cell> {
+        self.0.iter().flatten().flatten()
+    }
     fn iter_mut(&mut self) -> impl Iterator<Item = &mut Cell> {
         self.0.iter_mut().flatten().flatten()
     }
@@ -58,7 +61,7 @@ fn draw_cells(screen: &mut Screen, grid: Grid, sprites: &[Sprite], offset_x: u16
     (0..16).for_each(|i| {
         let (x, y) = (i % 4, i / 4);
         let rgb = (0..=5).choose_multiple(&mut thread_rng(), 3);
-        let fuzzy = Sprite::rectangle(4, 4, Some(Color::from_ansi_components(rgb[0], rgb[1], rgb[2])), 0);
+        let fuzzy = Sprite::rectangle(4, 4, Some(Color::from_ansi_components(rgb[0], rgb[1], rgb[2])), 1);
         if let Some(Cell {value, offset, .. }) = grid[i] {
             let sprite = sprites.get(value as usize - 1).unwrap_or(&fuzzy);
             screen.draw_sprite(sprite, (x * 4 + offset_x).wrapping_add_signed(offset.0), (y * 4 + offset_y).wrapping_add_signed(offset.1), Blit::Set);
@@ -85,6 +88,10 @@ fn is_over(grid: &Grid) -> bool {
     })
 }
 
+fn is_won(grid: &Grid) -> bool {
+    grid.iter().any(|c| c.value >= 11) // 2^11 = 2048
+}
+
 fn gravity(grid: &mut Grid, direction: Direction) -> Option<(Slides, Grid, u32)> {
     let vertical   = [[0, 4, 8, 12], [1, 5, 9, 13], [2, 6, 10, 14], [3,  7,  11, 15]];
     let horizontal = [[0, 1, 2, 3 ], [4, 5, 6, 7 ], [8, 9, 10, 11], [12, 13, 14, 15]];
@@ -102,7 +109,7 @@ fn gravity(grid: &mut Grid, direction: Direction) -> Option<(Slides, Grid, u32)>
         let mut dst = 0;
         for src in 0..4 {
             match (grid[slice[src]], buf[slice[dst]]) {
-                (None, _) => {}
+                (None, _) => (),
                 (Some(n), None) => {
                     buf[slice[dst]] = Some(n);
                     sliders.push((slice[src], (src - dst) as u16));
@@ -123,11 +130,7 @@ fn gravity(grid: &mut Grid, direction: Direction) -> Option<(Slides, Grid, u32)>
             }
         }
     }
-    if *grid != buf {
-        Some((sliders, buf, scored))
-    } else {
-        None
-    }
+    if *grid != buf { Some((sliders, buf, scored)) } else { None }
 }
 
 fn main() {
@@ -138,19 +141,20 @@ fn main() {
     spawn_food(&mut grid).unwrap();
     spawn_food(&mut grid).unwrap();
     
-    let mut slide = false;
-    let mut inhale = true;
-    let mut breath = 0;
+    let mut sliding = false;
     let mut over = false;
+    let mut won = false;
+    let mut inhaling = true;
+    let mut breath = 0;
     let mut score = 0;
     let mut best = 0;
     screen
         .start_loop(60, |screen, event| {
-            if !slide {
+            if !sliding {
                 if let Some(event) = event {
                     if let Some(dir) = event.direction_wasd() {
                         if let Some((sliders, new_grid, scored)) = gravity(&mut grid, dir) {
-                            slide = true;
+                            sliding = true;
                             score += scored;
                             best = best.max(score);
                             next_grid = new_grid;
@@ -166,8 +170,11 @@ fn main() {
                                     };
                                 };
                             }
+                            if !won && is_won(&grid) {
+                                won = true;
+                            }
                         }
-                        else if is_over(&grid) {
+                        else if !over && is_over(&grid) {
                             over = true;
                         }
                     } else if let Event::Char('r') = event {
@@ -186,22 +193,24 @@ fn main() {
                 }
                 equal && cell.offset == cell.intention
             }) {
-                slide = false;
+                sliding = false;
                 grid = next_grid;
                 grid.iter_mut().for_each(|cell| *cell = Cell { value: cell.value, ..Default::default() });
                 spawn_food(&mut grid);
             }
-            if inhale {
-                breath += 1; if breath == 47 { inhale = false; }
+            if inhaling {
+                breath += 1; if breath == 47 { inhaling = false; }
             } else {
-                breath -= 1; if breath == 0  { inhale = true;  }
+                breath -= 1; if breath == 0  { inhaling = true;  }
             }
             let playing_color = Color::from_ansi_greyscale(breath / 4 + 6);
-            let over_color    = Color::from_rgb_approximate(breath * 3 + 112, 64,               64              );
+            let lost_color    = Color::from_rgb_approximate(breath * 3 + 112, 64,               64              );
+            let won_color     = Color::from_rgb_approximate(64,               breath * 3 + 112, 64              );
             let score_color   = Color::from_rgb_approximate(breath * 3 + 112, 64,               breath * 3 + 112);
             let record_color  = Color::from_rgb_approximate(breath * 3 + 112, breath * 3 + 112, 64              );
             let best_color    = Color::from_rgb_approximate(64,               breath * 3 + 112, 64              );
-            draw_borders(screen, OFFSET_X - 1, OFFSET_Y - 1, if over { over_color } else { playing_color });
+            let border_color = if over { if won { won_color } else { lost_color }} else { playing_color };
+            draw_borders(screen, OFFSET_X - 1, OFFSET_Y - 1, border_color);
             draw_cells(screen, grid, &sprites, OFFSET_X, OFFSET_Y);
             draw_score(screen, score, OFFSET_X + 20, OFFSET_Y, if score == best { record_color } else { score_color });
             draw_score(screen, best, OFFSET_X + 24, OFFSET_Y,best_color );
