@@ -1,5 +1,10 @@
 #!/usr/bin/env -S cargo +nightly -Zscript
 //! ```cargo
+//! [package]
+//! edition = "2021"
+//! authors = [ "RocketRace <oliviaspalmu@gmail.com>" ]
+//! description = "The game of 2048 for the Esolangs Code Guessing round 42"
+//! 
 //! [dependencies]
 //! rand = "0.8.5"
 //! ti = { version = "1.2", git = "https://github.com/RocketRace/ti.git", features = ["images"] }
@@ -81,17 +86,6 @@ fn reversed<const N: usize, T>(array: [T; N]) -> [T; N] {
     copy
 }
 
-fn is_over(grid: &Grid) -> bool {
-    [Direction::Up, Direction::Down, Direction::Right, Direction::Left].into_iter().all(|dir| {
-        let mut clone = *grid;
-        gravity(&mut clone, dir).is_none()
-    })
-}
-
-fn is_won(grid: &Grid) -> bool {
-    grid.iter().any(|c| c.value >= 11) // 2^11 = 2048
-}
-
 fn gravity(grid: &mut Grid, direction: Direction) -> Option<(Slides, Grid, u32)> {
     let vertical   = [[0, 4, 8, 12], [1, 5, 9, 13], [2, 6, 10, 14], [3,  7,  11, 15]];
     let horizontal = [[0, 1, 2, 3 ], [4, 5, 6, 7 ], [8, 9, 10, 11], [12, 13, 14, 15]];
@@ -170,11 +164,12 @@ fn main() {
                                     };
                                 };
                             }
-                            if !won && is_won(&grid) {
+                            if !won && grid.iter().any(|c| c.value >= 11) {
+                                // 2^11 = 2048
                                 won = true;
                             }
                         }
-                        else if !over && is_over(&grid) {
+                        else if !over && [Direction::Up, Direction::Down, Direction::Right, Direction::Left].into_iter().all(|dir| gravity(&mut grid.clone(), dir).is_none()) {
                             over = true;
                         }
                     } else if let Event::Char('r') = event {

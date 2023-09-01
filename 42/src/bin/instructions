@@ -1,4 +1,5 @@
 slide: arrows/WASD
 retry: R
 exit: ^C
-use a font with proper braille
+
+use a font with proper braille (example in the RocketRace/ti repository)
