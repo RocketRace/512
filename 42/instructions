@@ -1,5 +1,7 @@
 slide: arrows/WASD
 retry: R
 exit: ^C
+there is no undo feature, it's cheating
+redo: Y
 
 use a font with proper braille (example in the RocketRace/ti repository)

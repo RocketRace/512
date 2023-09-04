@@ -11,9 +11,6 @@
 //! ```
 use ::{std::ops::{Index, IndexMut}, rand::{seq::IteratorRandom, thread_rng}, ti::{color::Color, event::{Direction, Event}, screen::{Blit, Screen}, sprite::{Atlas, ColorMode, Sprite}}};
 
-const OFFSET_X: u16 = 2;
-const OFFSET_Y: u16 = 4;
-
 #[derive(Clone, Copy, PartialEq, Default)]
 struct Cell {
     value: u8,
@@ -48,14 +45,14 @@ impl Grid {
     fn iter_mut(&mut self) -> impl Iterator<Item = &mut Cell> {
         self.0.iter_mut().flatten().flatten()
     }
+    fn spawn_food(&mut self) -> Option<()> {
+        (0..16)
+            .filter(|&i| self[i].is_none())
+            .choose(&mut thread_rng())
+            .map(|i| self[i] = Some(Cell::new(if rand::random::<f64>() < 0.9 { 1 } else { 2 })))
+    }
 }
 
-fn spawn_food(grid: &mut Grid) -> Option<()> {
-    (0..16)
-        .filter(|&i| grid[i].is_none())
-        .choose(&mut thread_rng())
-        .map(|i| grid[i] = Some(Cell::new(if rand::random::<f64>() < 0.9 { 1 } else { 2 })))
-}
 
 fn draw_borders(screen: &mut Screen, offset_x: u16, offset_y: u16, color: Color) {
     screen.draw_sprite(&Sprite::rectangle(18, 18, Some(color), 0), offset_x, offset_y, Blit::Set);
@@ -127,88 +124,124 @@ fn gravity(grid: &mut Grid, direction: Direction) -> Option<(Slides, Grid, u32)>
     if *grid != buf { Some((sliders, buf, scored)) } else { None }
 }
 
-fn main() {
-    let mut screen = Screen::new_pixels(32, 24);
-    let sprites = Atlas::open("atlas.png", ColorMode::Rgb, true).map(|atlas| (0..16).map(|i| atlas.sprite(i % 4 * 4, i / 4 * 4, 4, 4, 1, 1)).collect::<Vec<Sprite>>()).expect("sprite error");
-    let mut grid = Grid::default();
-    let mut next_grid = Grid::default();
-    spawn_food(&mut grid).unwrap();
-    spawn_food(&mut grid).unwrap();
-    
-    let mut sliding = false;
-    let mut over = false;
-    let mut won = false;
-    let mut inhaling = true;
-    let mut breath = 0;
-    let mut score = 0;
-    let mut best = 0;
-    screen
-        .start_loop(60, |screen, event| {
-            if !sliding {
-                if let Some(event) = event {
-                    if let Some(dir) = event.direction_wasd() {
-                        if let Some((sliders, new_grid, scored)) = gravity(&mut grid, dir) {
-                            sliding = true;
-                            score += scored;
-                            best = best.max(score);
-                            next_grid = new_grid;
-                            for (slider, cells) in sliders {
-                                if let Some(c) = grid[slider].as_mut() {
-                                    let dist = cells as i16 * 4;
-                                    c.speed = cells as i16;
-                                    c.intention = match dir {
-                                        Direction::Up    => (0, -dist),
-                                        Direction::Down  => (0,  dist),
-                                        Direction::Right => ( dist, 0),
-                                        Direction::Left  => (-dist, 0),
-                                    };
+struct Game {
+    grid: Grid,
+    next_grid: Grid,
+    sliding: bool,
+    over: bool,
+    won: bool,
+    score: u32,
+    grid_pos: (u16, u16),
+    score_pos: (u16, u16)
+}
+
+impl Game {
+    fn new(grid_pos: (u16, u16), score_pos: (u16, u16)) -> Self {
+        let mut this = Game {
+            grid: Grid::default(),
+            next_grid: Grid::default(),
+            sliding: false,
+            over: false,
+            won: false,
+            score: 0,
+            grid_pos,
+            score_pos
+        };
+        this.grid.spawn_food();
+        this
+    }
+    fn tick(&mut self, screen: &mut Screen, event: Option<Event>, best: &mut u32, breath: u8, sprites: &[Sprite]) {
+        if !self.sliding {
+            if let Some(event) = event {
+                if let Some(dir) = event.direction_wasd() {
+                    if let Some((sliders, new_grid, scored)) = gravity(&mut self.grid, dir) {
+                        self.sliding = true;
+                        self.score += scored;
+                        *best = (*best).max(self.score);
+                        self.next_grid = new_grid;
+                        for (slider, cells) in sliders {
+                            if let Some(c) = self.grid[slider].as_mut() {
+                                let dist = cells as i16 * 4;
+                                c.speed = cells as i16;
+                                c.intention = match dir {
+                                    Direction::Up    => (0, -dist),
+                                    Direction::Down  => (0,  dist),
+                                    Direction::Right => ( dist, 0),
+                                    Direction::Left  => (-dist, 0),
                                 };
-                            }
-                            if !won && grid.iter().any(|c| c.value >= 11) {
-                                // 2^11 = 2048
-                                won = true;
-                            }
+                            };
                         }
-                        else if !over && [Direction::Up, Direction::Down, Direction::Right, Direction::Left].into_iter().all(|dir| gravity(&mut grid.clone(), dir).is_none()) {
-                            over = true;
+                        if !self.won && self.grid.iter().any(|c| c.value >= 11) {
+                            // 2^11 = 2048
+                            self.won = true;
                         }
-                    } else if let Event::Char('r') = event {
-                        grid = Grid::default();
-                        spawn_food(&mut grid);
-                        spawn_food(&mut grid);
-                        over = false;
-                        score = 0;
                     }
+                    else if !self.over && [Direction::Up, Direction::Down, Direction::Right, Direction::Left].into_iter().all(|dir| gravity(&mut self.grid.clone(), dir).is_none()) {
+                        self.over = true;
+                    }
+                } else if let Event::Char('r') = event {
+                    self.grid = Grid::default();
+                    self.grid.spawn_food();
+                    self.grid.spawn_food();
+                    self.over = false;
+                    self.score = 0;
                 }
             }
-            else if grid.iter_mut().fold(true, |equal, cell| {
-                if cell.offset != cell.intention { 
-                    cell.offset.0 += cell.intention.0.signum() * cell.speed;
-                    cell.offset.1 += cell.intention.1.signum() * cell.speed;
-                }
-                equal && cell.offset == cell.intention
-            }) {
-                sliding = false;
-                grid = next_grid;
-                grid.iter_mut().for_each(|cell| *cell = Cell { value: cell.value, ..Default::default() });
-                spawn_food(&mut grid);
+        }
+        else if self.grid.iter_mut().fold(true, |equal, cell| {
+            if cell.offset != cell.intention { 
+                cell.offset.0 += cell.intention.0.signum() * cell.speed;
+                cell.offset.1 += cell.intention.1.signum() * cell.speed;
+            }
+            equal && cell.offset == cell.intention
+        }) {
+            self.sliding = false;
+            self.grid = self.next_grid;
+            self.grid.iter_mut().for_each(|cell| *cell = Cell { value: cell.value, ..Default::default() });
+            self.grid.spawn_food();
+        }
+        
+        let playing_color = Color::from_ansi_greyscale(breath / 4 + 6);
+        let c = breath * 3 + 112;
+        let lost_color    = Color::from_rgb_approximate(c,  64, 64);
+        let won_color     = Color::from_rgb_approximate(64, c,  64);
+        let score_color   = Color::from_rgb_approximate(c,  64, c );
+        let record_color  = Color::from_rgb_approximate(c,  c,  64);
+        let border_color = if self.over { if self.won { won_color } else { lost_color }} else { playing_color };
+        draw_borders(screen, self.grid_pos.0, self.grid_pos.1, border_color);
+        draw_cells(screen, self.grid, sprites, self.grid_pos.0 + 1, self.grid_pos.1 + 1);
+        draw_score(screen, self.score, self.score_pos.0, self.score_pos.1, if self.score == *best { record_color } else { score_color });
+    }
+}
+
+fn main() {
+    let mut screen = Screen::new_pixels(54, 24);
+    let sprites = Atlas::open("atlas.png", ColorMode::Rgb, true).map(|atlas| (0..16).map(|i| atlas.sprite(i % 4 * 4, i / 4 * 4, 4, 4, 1, 1)).collect::<Vec<Sprite>>()).expect("sprite error");
+    
+    let mut game = Game::new((1, 3), (22, 4));
+    let mut redo = false;
+    let mut p2 = Game::new((35, 3), (30, 4));
+    let mut best = 0;
+
+    let mut inhaling = true;
+    let mut breath = 0;
+
+    screen
+        .start_loop(60, |screen, event| {
+            if let Some(Event::Char('y')) = event {
+                redo = true;
             }
             if inhaling {
                 breath += 1; if breath == 47 { inhaling = false; }
             } else {
                 breath -= 1; if breath == 0  { inhaling = true;  }
             }
-            let playing_color = Color::from_ansi_greyscale(breath / 4 + 6);
-            let lost_color    = Color::from_rgb_approximate(breath * 3 + 112, 64,               64              );
-            let won_color     = Color::from_rgb_approximate(64,               breath * 3 + 112, 64              );
-            let score_color   = Color::from_rgb_approximate(breath * 3 + 112, 64,               breath * 3 + 112);
-            let record_color  = Color::from_rgb_approximate(breath * 3 + 112, breath * 3 + 112, 64              );
-            let best_color    = Color::from_rgb_approximate(64,               breath * 3 + 112, 64              );
-            let border_color = if over { if won { won_color } else { lost_color }} else { playing_color };
-            draw_borders(screen, OFFSET_X - 1, OFFSET_Y - 1, border_color);
-            draw_cells(screen, grid, &sprites, OFFSET_X, OFFSET_Y);
-            draw_score(screen, score, OFFSET_X + 20, OFFSET_Y, if score == best { record_color } else { score_color });
-            draw_score(screen, best, OFFSET_X + 24, OFFSET_Y,best_color );
+            game.tick(screen, event, &mut best, breath, &sprites);
+            if redo {
+                p2.tick(screen, event, &mut best, breath, &sprites);
+            }
+            let best_color = Color::from_rgb_approximate(64, breath * 3 + 112, 64);
+            draw_score(screen, best, 26, 4, best_color);
             Ok(())
         })
         .unwrap()
