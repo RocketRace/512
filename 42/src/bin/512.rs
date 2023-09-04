@@ -51,6 +51,46 @@ impl Grid {
             .choose(&mut thread_rng())
             .map(|i| self[i] = Some(Cell::new(if rand::random::<f64>() < 0.9 { 1 } else { 2 })))
     }
+    fn gravity(&mut self, direction: Direction) -> Option<(Slides, Grid, u32)> {
+        let vertical   = [[0, 4, 8, 12], [1, 5, 9, 13], [2, 6, 10, 14], [3,  7,  11, 15]];
+        let horizontal = [[0, 1, 2, 3 ], [4, 5, 6, 7 ], [8, 9, 10, 11], [12, 13, 14, 15]];
+        let slices = match direction {
+            Direction::Right => horizontal.map(reversed),
+            Direction::Left  => horizontal,
+            Direction::Up    => vertical,
+            Direction::Down  => vertical.map(reversed),
+        };
+    
+        let mut buf = Grid::default();
+        let mut sliders = vec![(0, 0); 16];
+        let mut scored = 0;
+        for slice in slices {
+            let mut dst = 0;
+            for src in 0..4 {
+                match (self[slice[src]], buf[slice[dst]]) {
+                    (None, _) => (),
+                    (Some(n), None) => {
+                        buf[slice[dst]] = Some(n);
+                        sliders.push((slice[src], (src - dst) as u16));
+                    }
+                    (Some(n), Some(m)) => {
+                        if n.value == m.value {
+                            buf[slice[dst]] = Some(Cell::new(n.value + 1));
+                            sliders.push((slice[src], (src - dst) as u16));
+                            scored += 1 << (n.value + 1);
+                        } else {
+                            // this can never panic: dst <= src && this match arm is only
+                            // possible after executing the previous arm once => dst < 3
+                            buf[slice[dst + 1]] = Some(n);
+                            sliders.push((slice[src], (src - dst - 1) as u16));
+                        }
+                        dst += 1;
+                    }
+                }
+            }
+        }
+        if *self != buf { Some((sliders, buf, scored)) } else { None }
+    }
 }
 
 
@@ -83,47 +123,6 @@ fn reversed<const N: usize, T>(array: [T; N]) -> [T; N] {
     copy
 }
 
-fn gravity(grid: &mut Grid, direction: Direction) -> Option<(Slides, Grid, u32)> {
-    let vertical   = [[0, 4, 8, 12], [1, 5, 9, 13], [2, 6, 10, 14], [3,  7,  11, 15]];
-    let horizontal = [[0, 1, 2, 3 ], [4, 5, 6, 7 ], [8, 9, 10, 11], [12, 13, 14, 15]];
-    let slices = match direction {
-        Direction::Right => horizontal.map(reversed),
-        Direction::Left  => horizontal,
-        Direction::Up    => vertical,
-        Direction::Down  => vertical.map(reversed),
-    };
-
-    let mut buf = Grid::default();
-    let mut sliders = vec![(0, 0); 16];
-    let mut scored = 0;
-    for slice in slices {
-        let mut dst = 0;
-        for src in 0..4 {
-            match (grid[slice[src]], buf[slice[dst]]) {
-                (None, _) => (),
-                (Some(n), None) => {
-                    buf[slice[dst]] = Some(n);
-                    sliders.push((slice[src], (src - dst) as u16));
-                }
-                (Some(n), Some(m)) => {
-                    if n.value == m.value {
-                        buf[slice[dst]] = Some(Cell::new(n.value + 1));
-                        sliders.push((slice[src], (src - dst) as u16));
-                        scored += 1 << (n.value + 1);
-                    } else {
-                        // this can never panic: dst <= src && this match arm is only
-                        // possible after executing the previous arm once => dst < 3
-                        buf[slice[dst + 1]] = Some(n);
-                        sliders.push((slice[src], (src - dst - 1) as u16));
-                    }
-                    dst += 1;
-                }
-            }
-        }
-    }
-    if *grid != buf { Some((sliders, buf, scored)) } else { None }
-}
-
 struct Game {
     grid: Grid,
     next_grid: Grid,
@@ -154,7 +153,7 @@ impl Game {
         if !self.sliding {
             if let Some(event) = event {
                 if let Some(dir) = event.direction_wasd() {
-                    if let Some((sliders, new_grid, scored)) = gravity(&mut self.grid, dir) {
+                    if let Some((sliders, new_grid, scored)) = self.grid.gravity(dir) {
                         self.sliding = true;
                         self.score += scored;
                         *best = (*best).max(self.score);
@@ -176,7 +175,7 @@ impl Game {
                             self.won = true;
                         }
                     }
-                    else if !self.over && [Direction::Up, Direction::Down, Direction::Right, Direction::Left].into_iter().all(|dir| gravity(&mut self.grid.clone(), dir).is_none()) {
+                    else if !self.over && [Direction::Up, Direction::Down, Direction::Right, Direction::Left].into_iter().all(|dir| self.grid.clone().gravity(dir).is_none()) {
                         self.over = true;
                     }
                 } else if let Event::Char('r') = event {
