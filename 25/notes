@@ -1,9 +1,0 @@
-
-entry :: [[Bool]] -> Int -> Int -> [Int]
-
-trans :: [[Bool]] -> [[Float]]
-
-P^k [s e] != 0 => path exists in k steps
-
-P^0..=n [s e] == 0 => path does not exist
-
