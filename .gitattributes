@@ -1,7 +1,0 @@
-*.rs linguist-language=Rust
-
-# ignore some sans undertales
-06/Copy_of_sponge_2_copy_3_Copy_FINAL.docx.py -linguist-detectable
-14/file.py -linguist-detectable
-14/file.py -linguist-detectable
-21/e621.py -linguist-detectable
