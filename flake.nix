@@ -23,6 +23,11 @@
       packages.default = crate;
       devShells.default = pkgs.mkShell {
         packages = [ crate ];
+        env = {
+            # Required for rust-analyzer to work for me. Maybe it's because
+            # I've installed it through a vscode extensions overlay.
+            RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
+          };
       };
     }
   );
